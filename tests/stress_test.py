@@ -121,8 +121,7 @@ async def run_stress_test(
     print(f"  Duration: {duration}s")
     print(f"  Rate: {messages_per_second} msg/sec per client")
     print(f"  Total expected messages: {num_clients * messages_per_second * duration:.0f}")
-    print()
-    
+
     # Create clients
     if client_type == "fast":
         clients = [StressTestClient(i, host, port) for i in range(num_clients)]
