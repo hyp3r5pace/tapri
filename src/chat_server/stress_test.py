@@ -83,10 +83,26 @@ class StressTestClient:
             pass
 
 
+class SlowClient(StressTestClient):
+    async def receive_loop(self):
+        """Continuously receive messages but with delays to simulate slow client"""
+        try:
+            while True:
+                data = await self.reader.readline()
+                if not data:
+                    break
+                self.messages_received += 1
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.errors += 1        
+
 async def run_stress_test(
     num_clients: int,
     duration: float,
     messages_per_second: float,
+    client_type: str = "fast",
     host: str = '127.0.0.1',
     port: int = 8888
 ):
@@ -108,7 +124,14 @@ async def run_stress_test(
     print()
     
     # Create clients
-    clients = [StressTestClient(i, host, port) for i in range(num_clients)]
+    if client_type == "fast":
+        clients = [StressTestClient(i, host, port) for i in range(num_clients)]
+    elif client_type == "mix":
+        clients = [StressTestClient(i, host, port) for i in range(num_clients//2)] + [SlowClient(i, host, port) for i in range(num_clients//2)]
+    elif client_type == "slow":
+        clients = [SlowClient(i, host, port) for i in range(num_clients)]
+    else:
+        raise Exception
     
     # Connect all clients
     print("Connecting clients...")
@@ -222,6 +245,15 @@ async def burst_test():
         messages_per_second=50
     )
 
+async def mix_test():
+    """Medium load: 50 clients, 5 msg/sec each, 60 seconds"""
+    await run_stress_test(
+        num_clients=50,
+        duration=60,
+        messages_per_second=5,
+        client_type="mix"
+    )    
+
 
 if __name__ == "__main__":
     import sys
@@ -233,6 +265,7 @@ if __name__ == "__main__":
             'medium': medium_load,
             'heavy': heavy_load,
             'burst': burst_test,
+            'mix': mix_test
         }
         if test_name in tests:
             asyncio.run(tests[test_name]())

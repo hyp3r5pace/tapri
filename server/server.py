@@ -1,57 +1,33 @@
+"""
+Main chat server implementation.
+
+Handles client connections, broadcasting, and server lifecycle.
+"""
+
 import asyncio
+import logging
+from .client_connection import ClientConnection
+import argparse
 
-class Client:
-    def __init__(self, writer, addr, seq):
-        self.writer = writer
-        self.addr = addr
-        self.queue = asyncio.Queue(maxsize=500)
-        self.next_seq = seq
-        self.pending = dict()
-        self.sender_task = None
-    
-    async def sender(self):
-        # close writer on client_handler
-        """Function to send messages to the client, as fetched from the queue"""
-        try:
-            while True:
-                msg_type, seq, msg = await self.queue.get()
-                if msg_type == "direct":
-                    # posion pill ("direct", None, None)
-                    # will send message (broadcast or direct) until poison pill is processed
-                    if msg == None:
-                        self.queue.task_done()
-                        break
-                    try:
-                        self.writer.write(msg.encode() + b'\n')
-                        await self.writer.drain()
-                    except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError, asyncio.CancelledError) as e:
-                        print(f"Error@{self.addr} in sender() during direct message: {e}")
-                        self.queue.task_done()
-                        if isinstance(e, asyncio.CancelledError):
-                            raise
-                        break
-                elif msg_type == "broadcast":
-                    self.pending[seq] = msg
-                    try:
-                        while self.next_seq in self.pending:
-                            self.writer.write(self.pending.pop(self.next_seq).encode() + b'\n')
-                            await self.writer.drain()
-                            self.next_seq += 1
-                    except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError, asyncio.CancelledError) as e:
-                        print(f"Error@{self.addr} in sender() during broadcast: {e}")
-                        self.queue.task_done()
-                        if isinstance(e, asyncio.CancelledError):
-                            raise
-                        break
-                
-                self.queue.task_done()
-        finally:
-            print(f"Sender cleanup for {self.addr}")
-            self.pending.clear()
-
+logger = logging.getLogger(__name__)
 
 class Server:
+    """
+    Async chat server with ordered broadcast delivery.
+    
+    Features:
+    - Multiple concurrent clients
+    - Ordered message delivery
+    - Graceful slow client handling
+    """
+
     def __init__(self, port):
+        """
+        Initialize server.
+        
+        Args:
+            port: Port to listen on
+        """
         self.port = port
         self.client_list = {} # writer: Client()
         self.global_seq = 0
@@ -60,13 +36,14 @@ class Server:
         self.background_tasks = set()
     
     async def client_handler(self, reader, writer):
+        """Handle a single client connection."""
         addr = writer.get_extra_info("peername")
-        print(f"Client Connected: {addr}")
+        logger.info(f"Client Connected: {addr}")
         while True:
             try:
                 msg = await reader.readline()
             except (ConnectionResetError,ConnectionAbortedError,ConnectionRefusedError) as e:
-                print(f"ERROR: {addr} has connection error: {e}")
+                logger.error(f"ERROR: {addr} has connection error: {e}")
                 client = self.client_list.get(writer, None)
                 if client:
                     if await self.remove_client_immediate(client):
@@ -75,7 +52,7 @@ class Server:
                         task.add_done_callback(self._task_done_callback)
                 break
             except Exception as e:
-                print(f"ERROR: Unexpected error: {e}")
+                logger.error(f"ERROR: Unexpected error: {e}")
                 client = self.client_list.get(writer, None)
                 if client:
                     if await self.remove_client_immediate(client):
@@ -85,7 +62,7 @@ class Server:
                 break
             # if writer.close(), i.e, connection is closed, then exit the loop
             if not msg:
-                print(f"{addr} disconnected (EOF)")
+                logger.info(f"{addr} disconnected (EOF)")
                 client = self.client_list.get(writer, None)
                 if client:
                     if await self.remove_client_immediate(client):
@@ -94,13 +71,13 @@ class Server:
                         task.add_done_callback(self._task_done_callback)
                 break
             text = msg.decode().strip()
-            print(f"Received msg: {text}")
+            logger.debug(f"Received msg: {text}")
             if text == "/join":
                 if writer in self.client_list:
                     client = self.client_list[writer]
                     await self.add_to_queue(client, "direct", None, "Server: Already joined!")
                 else:
-                    client = Client(writer, addr, None)
+                    client = ClientConnection(writer, addr, None)
                     sender = asyncio.create_task(client.sender())
                     client.sender_task = sender
                     await self.join(client)
@@ -114,7 +91,7 @@ class Server:
                 # if client is not in client_list, the client hasn't joined
                 client = self.client_list.get(writer, None)
                 if client is None:
-                    print(f"{addr[0]}:{addr[1]} hasn't joined yet")
+                    logger.info(f"{addr[0]}:{addr[1]} hasn't joined yet")
                 else:
                     await self.leave(client)
                     break
@@ -123,12 +100,12 @@ class Server:
                 # check if client has joined yet or not
                 client = self.client_list.get(writer, None)
                 if client is None:
-                    print(f"{addr[0]}:{addr[1]} hasn't joined yet!")
+                    logger.info(f"{addr[0]}:{addr[1]} hasn't joined yet!")
                     # should I send a informative msg to the client here? - yes
                     continue
                 # get the main msg content to be broadcasted
                 content = text[10:].strip()
-                print(f"Broadcast content: {content}")
+                logger.debug(f"Broadcast content: {content}")
                 # broadcast the msg
                 # what will happen if current client is removed from the server due to full queue
                 # as done in broadcast()?
@@ -137,7 +114,7 @@ class Server:
                 await self.broadcast(content, client.addr)
 
     async def remove_client_immediate(self, client):
-        """Remove client immediately"""
+        """Remove client from client list immediately."""
         async with self.global_del_lock:
             writer = client.writer
             if writer in self.client_list:
@@ -146,7 +123,7 @@ class Server:
         return False
 
     async def client_cleanup(self, client):
-        """Fully graceful background cleanup"""
+        """Gracefully clean up client resources."""
         # need timeout here since client sender might get over while queue is full and
         # hence queue will never be processed and the coroutine will wait here indefinetly.
         try:
@@ -156,13 +133,13 @@ class Server:
             )
             poison_sent = True
         except asyncio.TimeoutError:
-            print(f"Queue full/sender dead for {client.addr}, skipping poison pill")
+            logger.warning(f"Queue full/sender dead for {client.addr}, skipping poison pill")
             poison_sent = False
         if poison_sent:
             try:
                 await client.sender_task
             except Exception as e:
-                print(f"Sender error: {e}")
+                logger.error(f"Sender error: {e}")
         else:
             # poison pill not sent, check if sender is already done
             if not client.sender_task.done():
@@ -178,7 +155,7 @@ class Server:
             await client.writer.wait_closed()
 
     def _task_done_callback(self, task):
-        """Called when background task finishes"""
+        """Called when background task completes"""
         # remove from set
         self.background_tasks.discard(task)
         try:
@@ -186,17 +163,17 @@ class Server:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"Background task failed: {e}")
+            logger.error(f"Background task failed: {e}")
 
     async def add_to_queue(self, client, msg_type, seq, msg):
-        # tries to add msg to client queue, if full for the waiting period, drops the client
+        """Add message to client queue with timeout."""
         item = (msg_type, seq, msg)
         try:
             await asyncio.wait_for(
                 client.queue.put(item),
                 timeout=2.0
             )
-            print(f"{item}: sent for {client.addr} successfully!")
+            logger.debug(f"{item}: sent for {client.addr} successfully!")
             return client, None
         except asyncio.TimeoutError:
             return client, "timeout"
@@ -204,6 +181,7 @@ class Server:
             return client, str(e)
 
     async def broadcast(self, msg, sender_addr):
+        """Broadcast message to all connected clients."""
         async with self.global_lock:
             seq = self.global_seq
             self.global_seq += 1
@@ -212,7 +190,7 @@ class Server:
         async with self.global_del_lock:
             clients_snapshot = list(self.client_list.items())
         msg = f"{sender_addr[0]}:{sender_addr[1]}: {msg}" if sender_addr else msg
-        print(f"broadcast(): {msg}")
+        logger.debug(f"broadcast(): {msg}")
         tasks = [self.add_to_queue(client, "broadcast", seq, msg) for writer, client in clients_snapshot]
         results = await asyncio.gather(*tasks)
 
@@ -240,7 +218,7 @@ class Server:
         # thus, just adding msg to the queue with nowait
         # broadcast messages from other clients are more important than a direct server message, those entail for queue to be not full
         client.queue.put_nowait(("direct", None, f"Server: Welcome! You are now connected as {client.addr[0]}:{client.addr[1]}"))
-        print(f"{client.addr} joined the chat!")
+        logger.info(f"{client.addr} joined the chat!")
 
     async def leave(self, client):
         """Remove the client from the list and close task associated with it"""
@@ -253,7 +231,7 @@ class Server:
             task.add_done_callback(self._task_done_callback)
             await self.broadcast(f"Server: {client.addr[0]}:{client.addr[1]} left the chat", None)
         else:
-            print(f"Client {client.addr[0]}:{client.addr[1]} already removed!")
+            logger.info(f"Client {client.addr[0]}:{client.addr[1]} already removed!")
 
 
     async def run_server(self):
@@ -263,16 +241,31 @@ class Server:
             self.port
         )
         addr = server.sockets[0].getsockname()
-        print(f"Server running on {addr}")
+        logger.info(f"Server running on {addr}")
         async with server:
             await server.serve_forever()
 
-if __name__ == "__main__":
-    server = Server(8888)
+def main():
+    """Entry point for server"""
+    parser = argparse.ArgumentParser(description="Chat Server")
+    parser.add_argument('--port', type=int, default=8888, help='Port to listen on')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+
+    # setup logging
+    level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    server = Server(args.port)
     try:
         asyncio.run(server.run_server())
     except KeyboardInterrupt:
-        print("Closing server...")
+        logger.info("Server stopped by user")
+    
+if __name__ == "__main__":
+    main()
 
 
     
