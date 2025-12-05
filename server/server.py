@@ -6,7 +6,7 @@ Handles client connections, broadcasting, and server lifecycle.
 
 import asyncio
 import logging
-from .client_connection import ClientConnection
+from client_connection import ClientConnection
 import argparse
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ class Server:
                     await self.leave(client)
                     break
             elif text[:10] == "/broadcast":
-                print("Broadcasting message")
+                logger.info("Broadcasting message")
                 # check if client has joined yet or not
                 client = self.client_list.get(writer, None)
                 if client is None:
