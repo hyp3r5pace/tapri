@@ -1,63 +1,83 @@
+"""
+Main client implementation
+Handles client connection with server, message sending and receiving, message validation and graceful shutdown
+"""
+
 import asyncio
 import sys
+import logging
+import argparse
+from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 class Client():
-    def __init__(self, host, port):
+    """
+    Async client for communicating with the server
+
+    Features:
+    - Message validation before sending messages
+    - Message sender and receiver functions
+    - graceful shutdown of the client
+    """
+    def __init__(self, host: str, port: int) -> None:
+        """
+        Initialize client
+        Args:
+            host: ip of the server to connect to
+            port: port of the server to connect to
+        """
         self.host = host
         self.port = port
-        self.writer = None
-        self.reader = None
+        self.writer: Optional[asyncio.StreamWriter] = None
+        self.reader: Optional[asyncio.StreamReader] = None
     
-    # functions:
-        # send_msg
-        # leave
-        # interactive loop which reads user input and sends them to the server
-    async def connect_to_server(self):
-        """Connect to chat server"""
+    async def connect_to_server(self) -> Tuple[Optional[asyncio.StreamReader], Optional[asyncio.StreamWriter]]:
+        """Handle the connection to the chat server"""
         try:
             reader, writer = await asyncio.open_connection(
                 self.host,
                 self.port
             )
-            print(f"Connected to {self.host}:{self.port}")
+            logger.info(f"Connected to {self.host}:{self.port}")
             return reader, writer
         except ConnectionRefusedError:
-            print(f"ERROR:Server at {self.host}:{self.port} refused connection")
+            logger.error(f"ERROR:Server at {self.host}:{self.port} refused connection")
             print("Is the server running?")
             print("Is the port correct?")
             return None, None
         except asyncio.TimeoutError:
-            print(f"ERROR: Connection to {self.host}:{self.port} timed out")
+            logger.error(f"ERROR: Connection to {self.host}:{self.port} timed out")
             return None, None
         except OSError as e:
-            print(f"ERROR: OS Error: {e}")
+            logger.error(f"ERROR: OS Error: {e}")
             return None, None
         except Exception as e:
-            print(f"ERROR: Unexpected error: {type(e).__name__}: {e}")
+            logger.error(f"ERROR: Unexpected error: {type(e).__name__}: {e}")
             return None, None
         
 
-    async def send_message(self, message):
-        """Send message to server"""
+    async def send_message(self, message: str) -> bool:
+        """handle the sending of messages to server"""
         successful = False
         try:
             self.writer.write(message.encode() + b'\n')
             await self.writer.drain()
             successful = True
         except ConnectionResetError as e:
-            print(f"Connection reset: {e}")
+            logger.error(f"Connection reset: {e}")
         except BrokenPipeError as e:
-            print(f"Broken pipe: {e}")
+            logger.error(f"Broken pipe: {e}")
         except ConnectionAbortedError as e:
-            print(f"Connection aborted: {e}")
+            logger.error(f"Connection aborted: {e}")
         except OSError as e:
-            print(f"OS Error: {e}")
+            logger.error(f"OS Error: {e}")
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            logger.error(f"Unexpected error: {e}")
         return successful
     
-    def message_validation(self, msg):
-        """Validate the message sent to the server"""
+    def message_validation(self, msg: str) -> bool:
+        """handle the validation of the message sent to the server"""
         if not msg or not msg.strip():
             return False
         
@@ -77,20 +97,20 @@ class Client():
             return False
     
     async def receive_message(self):
-        """Continously receive message from the server"""
+        """Handle the receiving of messages from the server"""
         try:
             while True:
                 data = await self.reader.readline()
                 if not data:
-                    print("Server disconnected")
+                    logger.info("Server disconnected")
                     break
                 message = data.decode().strip()
                 print(f"\r{message}")
                 print("> ", end="", flush=True)
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
-            print(f"Connection ERROR: {e}")
+            logger.error(f"Connection ERROR: {e}")
         except asyncio.CancelledError:
-            print("Stopping receiver...")
+            logger.info("Stopping receiver...")
             raise
 
     async def send_user_input(self):
@@ -109,10 +129,10 @@ class Client():
                 # send the message to the server
                 status = await self.send_message(message)
                 if not status or message == "/leave":
-                    print("\nClient wants to close down...")
+                    logger.info("\nClient wants to close down...")
                     break
         except asyncio.CancelledError:
-            print("\nStopping sender...")
+            logger.info("\nStopping sender...")
             raise
 
 
@@ -121,7 +141,7 @@ class Client():
         self.reader, self.writer = await self.connect_to_server()
         
         if self.reader is None and self.writer is None:
-            print("Couldn't connect to the server")
+            logger.error("Failed to connect to the server")
             return
         
         receiver_task = asyncio.create_task(self.receive_message())
@@ -140,19 +160,32 @@ class Client():
                 except asyncio.CancelledError:
                     pass
         finally:
-            self.writer.close()
-            await self.writer.wait_closed()
-            print("Disconnected from server")
+            if self.writer and not self.writer.is_closing():
+                self.writer.close()
+                await self.writer.wait_closed()
+            logger.info("Disconnected from server")
 
     
 async def main():
-    client = Client(host='127.0.0.1', port=8888)
+    parser = argparse.ArgumentParser(description="Chat Client")
+    parser.add_argument('--host', default='127.0.0.1', help='Server host')
+    parser.add_argument('--port', type=int, default=8888, help='Server port')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+    # setup logging
+    level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    client = Client(host=args.host, port=args.port)
     await client.run()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nClient Stopped")
+        logger.info("\nClient Stopped by user")
 
 
