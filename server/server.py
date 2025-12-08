@@ -6,7 +6,7 @@ Handles client connections, broadcasting, and server lifecycle.
 
 import asyncio
 import logging
-from client_connection import ClientConnection
+from .client_connection import ClientConnection
 import argparse
 
 logger = logging.getLogger(__name__)
