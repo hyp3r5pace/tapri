@@ -6,9 +6,6 @@ import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from server.client_connection import ClientConnection
 from server.server import Server
 

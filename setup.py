@@ -14,10 +14,10 @@ setup(
     packages=find_packages(),
 
     # no runtime dependencies (only uses standard library)
-    install_requires = [],
+    install_require = [],
 
     # Development dependencies
-    extra_requires = {
+    extra_require = {
         "dev": [
             "pytest>=7.4.0",
             "pytest-asyncio>=0.21.0",

@@ -4,8 +4,6 @@ from unittest.mock import Mock, AsyncMock, patch
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from server.server import Server
 from client.client import Client
 

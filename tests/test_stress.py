@@ -5,9 +5,6 @@ from typing import List
 import pytest
 from pathlib import Path
 import sys
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from server.server import Server
 
 class StressTestClient:
@@ -111,7 +108,8 @@ async def run_stress_test(
     messages_per_second: float,
     client_type: str = "fast",
     host: str = '127.0.0.1',
-    port: int = 8888
+    port: int = 8888,
+    start_server: bool = False,
 ):
     """
     Run stress test
@@ -129,11 +127,12 @@ async def run_stress_test(
     print(f"  Rate: {messages_per_second} msg/sec per client")
     print(f"  Total expected messages: {num_clients * messages_per_second * duration:.0f}")
 
-    # start server
-    server_task = asyncio.create_task(Server(port).run_server())
+    if start_server:
+        # start server
+        server_task = asyncio.create_task(Server(port).run_server())
 
-    # wait for server to spin up
-    await asyncio.sleep(1)
+        # wait for server to spin up
+        await asyncio.sleep(1)
 
     # Create clients
     if client_type == "fast":
@@ -196,12 +195,13 @@ async def run_stress_test(
     close_tasks = [client.close() for client in clients if client.writer]
     await asyncio.gather(*close_tasks, return_exceptions=True)
 
-    # close the server
-    server_task.cancel()
-    try:
-        await server_task
-    except asyncio.CancelledError:
-        pass
+    if start_server:
+        # close the server
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
     
     # Calculate statistics
     total_sent = sum(c.messages_sent for c in clients)
@@ -239,7 +239,8 @@ async def test_light_load():
     await run_stress_test(
         num_clients=10,
         duration=30,
-        messages_per_second=10
+        messages_per_second=10,
+        start_server=True
     )
 
 @pytest.mark.slow
@@ -249,7 +250,8 @@ async def test_medium_load():
     await run_stress_test(
         num_clients=50,
         duration=60,
-        messages_per_second=5
+        messages_per_second=5,
+        start_server=True
     )
 
 @pytest.mark.slow
@@ -259,7 +261,8 @@ async def test_heavy_load():
     await run_stress_test(
         num_clients=100,
         duration=30,
-        messages_per_second=10
+        messages_per_second=10,
+        start_server=True
     )
 
 @pytest.mark.slow
@@ -269,7 +272,8 @@ async def test_burst():
     await run_stress_test(
         num_clients=50,
         duration=10,
-        messages_per_second=50
+        messages_per_second=50,
+        start_server=True
     )
 
 @pytest.mark.slow
