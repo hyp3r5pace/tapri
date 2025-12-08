@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from server.server import Server
 from client.client import Client
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_complete_chat_flow():
     """

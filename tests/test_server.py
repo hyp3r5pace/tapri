@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from server.client_connection import ClientConnection
 from server.server import Server
 
+@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_server_starts():
     """Test that server can start."""
@@ -32,6 +33,7 @@ class Writer:
     async def drain(self):
         pass
 
+@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_client_sender_broadcast():
     """Test the client sender function for broadcast msg"""
@@ -46,6 +48,7 @@ async def test_client_sender_broadcast():
     writer.write.assert_called_with(msg.encode()+b'\n')
     writer.drain.assert_called_once()
 
+@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_client_sender_direct():
     """Test the client sender function for direct msg"""
@@ -60,6 +63,7 @@ async def test_client_sender_direct():
     writer.write.assert_called_with(msg.encode()+b'\n')
     writer.drain.assert_called_once()
 
+@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_client_sender_closeup():
     """Test the client sender function closeup process"""

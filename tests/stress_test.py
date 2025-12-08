@@ -2,6 +2,13 @@ import asyncio
 import time
 import random
 from typing import List
+import pytest
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from server.server import Server
 
 class StressTestClient:
     def __init__(self, client_id: int, host: str, port: int):
@@ -122,6 +129,12 @@ async def run_stress_test(
     print(f"  Rate: {messages_per_second} msg/sec per client")
     print(f"  Total expected messages: {num_clients * messages_per_second * duration:.0f}")
 
+    # start server
+    server_task = asyncio.create_task(Server(port).run_server())
+
+    # wait for server to spin up
+    await asyncio.sleep(1)
+
     # Create clients
     if client_type == "fast":
         clients = [StressTestClient(i, host, port) for i in range(num_clients)]
@@ -133,7 +146,7 @@ async def run_stress_test(
         raise Exception
     
     # Connect all clients
-    print("Connecting clients...")
+    print("\nConnecting clients...")
     connect_tasks = [client.connect() for client in clients]
     results = await asyncio.gather(*connect_tasks)
     connected = sum(results)
@@ -144,7 +157,7 @@ async def run_stress_test(
         return
     
     # Join all clients
-    print("Joining clients...")
+    print("\nJoining clients...")
     join_tasks = [client.join() for client in clients if client.writer]
     await asyncio.gather(*join_tasks)
     await asyncio.sleep(1)  # Let join messages propagate
@@ -156,7 +169,7 @@ async def run_stress_test(
     ]
     
     # Start test
-    print(f"Starting message blast for {duration}s...")
+    print(f"\nStarting message blast for {duration}s...")
     start_time = time.time()
     
     # Send messages
@@ -179,9 +192,16 @@ async def run_stress_test(
     elapsed = time.time() - start_time
     
     # Close all clients
-    print("Closing clients...")
+    print("\nClosing clients...")
     close_tasks = [client.close() for client in clients if client.writer]
     await asyncio.gather(*close_tasks, return_exceptions=True)
+
+    # close the server
+    server_task.cancel()
+    try:
+        await server_task
+    except asyncio.CancelledError:
+        pass
     
     # Calculate statistics
     total_sent = sum(c.messages_sent for c in clients)
@@ -212,7 +232,9 @@ async def run_stress_test(
 
 
 # Test scenarios
-async def light_load():
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_light_load():
     """Light load: 10 clients, 10 msg/sec each, 30 seconds"""
     await run_stress_test(
         num_clients=10,
@@ -220,7 +242,9 @@ async def light_load():
         messages_per_second=10
     )
 
-async def medium_load():
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_medium_load():
     """Medium load: 50 clients, 5 msg/sec each, 60 seconds"""
     await run_stress_test(
         num_clients=50,
@@ -228,7 +252,9 @@ async def medium_load():
         messages_per_second=5
     )
 
-async def heavy_load():
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_heavy_load():
     """Heavy load: 100 clients, 10 msg/sec each, 30 seconds"""
     await run_stress_test(
         num_clients=100,
@@ -236,7 +262,9 @@ async def heavy_load():
         messages_per_second=10
     )
 
-async def burst_test():
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_burst():
     """Burst test: 50 clients, 50 msg/sec each, 10 seconds"""
     await run_stress_test(
         num_clients=50,
@@ -244,14 +272,16 @@ async def burst_test():
         messages_per_second=50
     )
 
-async def mix_test():
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_mix():
     """Medium load: 50 clients, 5 msg/sec each, 60 seconds"""
     await run_stress_test(
         num_clients=50,
         duration=60,
         messages_per_second=5,
         client_type="mix"
-    )    
+    )   
 
 
 if __name__ == "__main__":
@@ -260,11 +290,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         test_name = sys.argv[1]
         tests = {
-            'light': light_load,
-            'medium': medium_load,
-            'heavy': heavy_load,
-            'burst': burst_test,
-            'mix': mix_test
+            'light': test_light_load,
+            'medium': test_medium_load,
+            'heavy': test_heavy_load,
+            'burst': test_burst,
+            'mix': test_mix
         }
         if test_name in tests:
             asyncio.run(tests[test_name]())
@@ -273,4 +303,4 @@ if __name__ == "__main__":
             print(f"Available: {', '.join(tests.keys())}")
     else:
         # Run light load by default
-        asyncio.run(light_load())
+        asyncio.run(test_light_load())

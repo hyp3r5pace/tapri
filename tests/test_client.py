@@ -13,12 +13,14 @@ from server.client_connection import ClientConnection
 from client.client import Client
 from server.server import Server
 
+@pytest.mark.fast
 def test_client_format_addr():
     """Test address formatting"""
     writer = Mock()
     client = ClientConnection(writer, ('192.168.1.100', 5000), 0)
     assert client.format_addr() == "192.168.1.100:5000"
 
+@pytest.mark.fast
 def test_client_message_validation():
     """Test message validation"""
     client = Client('localhost', 8888)
