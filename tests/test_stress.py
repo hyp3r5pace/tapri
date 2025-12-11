@@ -110,6 +110,7 @@ async def run_stress_test(
     host: str = '127.0.0.1',
     port: int = 8888,
     start_server: bool = False,
+    min_expected_delivery_rate = 100,
 ):
     """
     Run stress test
@@ -223,7 +224,8 @@ async def run_stress_test(
     expected_receives = total_sent * (connected - 1)
     if expected_receives > 0:
         delivery_rate = (total_received / expected_receives) * 100
-        print(f"Delivery rate: {delivery_rate:.2f}%")
+        assert delivery_rate >= min_expected_delivery_rate, f"Delivery rate of {delivery_rate} lower than expected {min_expected_delivery_rate}"
+        print(f"Delivery rate: {delivery_rate}")
         print(f"Expected receives: {expected_receives}")
     
     print(f"Avg msgs sent per client: {total_sent/connected:.2f}")
@@ -240,7 +242,8 @@ async def test_light_load():
         num_clients=10,
         duration=30,
         messages_per_second=10,
-        start_server=True
+        start_server=True,
+        min_expected_delivery_rate=100
     )
 
 @pytest.mark.slow
@@ -251,7 +254,8 @@ async def test_medium_load():
         num_clients=50,
         duration=60,
         messages_per_second=5,
-        start_server=True
+        start_server=True,
+        min_expected_delivery_rate=95
     )
 
 @pytest.mark.slow
@@ -262,7 +266,8 @@ async def test_heavy_load():
         num_clients=100,
         duration=30,
         messages_per_second=10,
-        start_server=True
+        start_server=True,
+        min_expected_delivery_rate=85
     )
 
 @pytest.mark.slow
@@ -273,7 +278,8 @@ async def test_burst():
         num_clients=50,
         duration=10,
         messages_per_second=50,
-        start_server=True
+        start_server=True,
+        min_expected_delivery_rate=60
     )
 
 @pytest.mark.slow
@@ -284,7 +290,9 @@ async def test_mix():
         num_clients=50,
         duration=60,
         messages_per_second=5,
-        client_type="mix"
+        client_type="mix",
+        start_server=True,
+        min_expected_delivery_rate=50
     )   
 
 

@@ -105,7 +105,7 @@ async def test_complete_chat_flow():
 
         # check if broadcast notification is received
         broadcast_recieved = any("Hello from client 1!" in msg for msg in client2_messages)
-        assert broadcast_recieved, "Client 2 did not recieve broadcast message"
+        assert broadcast_recieved, "Client 2 did not receive broadcast message"
 
         # check if leave notification was received
         leave_received = any("left the chat" in msg for msg in client2_messages)
