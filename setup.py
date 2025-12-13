@@ -17,7 +17,7 @@ setup(
     install_require = [],
 
     # Development dependencies
-    extra_require = {
+    extras_require = {
         "dev": [
             "pytest>=7.4.0",
             "pytest-asyncio>=0.21.0",
