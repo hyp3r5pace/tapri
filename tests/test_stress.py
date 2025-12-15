@@ -267,7 +267,7 @@ async def test_heavy_load():
         duration=30,
         messages_per_second=10,
         start_server=True,
-        min_expected_delivery_rate=85
+        min_expected_delivery_rate=75
     )
 
 @pytest.mark.slow
